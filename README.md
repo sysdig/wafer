@@ -14,6 +14,11 @@ git clone https://github.com/sysdig/wafer && cd wafer && pip3 install -r require
 
 Wafer uses ChromeDriver to render the page and analyze the DOM. You can download latest ChromeDriver [here](https://googlechromelabs.github.io/chrome-for-testing/#stable).
 
+Wafer can automatically download the latest ChromeDriver for you, just run the following command.
+
+```bash
+python3 wafer.py --update-chromedriver
+```
 ## Techniques
 
 Wafer first try to identify blocked payloads or strings by sending a list of common payloads. Then it uses various techniques to build unique payloads which could potentially trigger an XSS.
@@ -24,7 +29,15 @@ Wafer can combine multiple techniques to build unique payloads that trigger diff
 
 ## Human Interaction
 
-Some vectors require human interaction, for example, the `onmouseover` v ector requires the user to hover over the payload. Wafer will automate all the possible interactions so user doesn't have to do it manually.
+Some vectors require human interaction, for example, the `onmouseover` vector requires the user to hover over the payload. Wafer will automate all the possible interactions so user doesn't have to do it manually.
+
+## Usage
+
+Using Wafer is pretty simple, just pass the URL and the parameter you want to test (only GET parameters are supported at the moment).
+
+```bash
+python3 wafer.py --url [URL] --param [PARAMETER]
+```
 
 ## Acknowledgements
 

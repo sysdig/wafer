@@ -8,6 +8,10 @@ from tags import GlobalAttributes, EventsAttributes, TagSpecificAttributes, Tags
 from mutations import Mutations
 from utils import choice, choice_percent
 from threading import Thread, Lock
+from scripts import INTERACTION_TRIGGER, ALERT_TRIGGER
+from update import install_chromedriver
+import logging as log
+import argparse
 import random
 import time
 
@@ -48,32 +52,15 @@ class FuzzQueue():
 
 
 class WAFBypass():
-    code = "window.alert_trigger = false;window.alert = function() {window.alert_trigger = true;};window.confirm = window.alert;window.prompt = window.alert;"
-    trigger = """
-var ids = {0};
-for (var i = 0; i < ids.length; i++) {{
-    var element = document.getElementById(ids[i]);
-    if(!element) continue;
-    // trigger all possible events click, mouseover, etc.
-    var events = ['click', 'mouseover', 'mousedown', 'mouseup', 'mousemove', 'mouseout', 'mouseenter', 'mouseleave', 'dblclick', 'contextmenu', 'wheel', 'select', 'pointerdown', 'pointerup', 'pointermove', 'pointerover', 'pointerout', 'pointerenter', 'pointerleave', 'gotpointercapture', 'lostpointercapture'];
-    try {{
-        for (var j = 0; j < events.length; j++) {{
-            var event = new MouseEvent(events[j], {{bubbles: true}});
-            element.dispatchEvent(event);
-        }}
-        element.focus();
-        element.blur();
-        // trigger accesskey ctrl+alt+X
-        element.dispatchEvent(new KeyboardEvent('keydown', {{ctrlKey: true, altKey: true, key: 'x'}}));
-    }} catch (e) {{}}
-}}
-                """
+    code = ALERT_TRIGGER
+    trigger = INTERACTION_TRIGGER
 
-    def __init__(self, url, param) -> None:
-        self.param = param
+    def __init__(self, opts) -> None:
+        self.param = opts.param
         self.options = webdriver.ChromeOptions()
         self.options.add_argument('--no-sandbox')
-        # self.options.add_argument('--headless')
+        if opts.headless:
+            self.options.add_argument('--headless')
         self.options.add_argument('--disable-gpu')
         self.options.add_experimental_option(
             "excludeSwitches", ["enable-logging"])
@@ -82,7 +69,7 @@ for (var i = 0; i < ids.length; i++) {{
         self.driver = webdriver.Chrome(
             options=self.options,
             service=service.Service(service_args=["--log-path=NUL"]))
-        self.url = urlparse(url)
+        self.url = urlparse(opts.url)
         self.mutator = Mutations()
         self.queue = FuzzQueue()
         self.threads = []
@@ -221,6 +208,9 @@ for (var i = 0; i < ids.length; i++) {{
                                      glob=True, root=None)
                 tag.add_attribute(attr)
 
+            if len(self.unfiltered_attributes["events"]) == 0:
+                raise Exception("No available events found")
+
             attr = choice(self.unfiltered_attributes["events"])
             # make a copy of attr to avoid mutating the original
             attr = HTMLAttribute(attr.name, attr.kind,
@@ -319,9 +309,7 @@ for (var i = 0; i < ids.length; i++) {{
     def test(self):
         try:
             self.dry_run()
-
             print("Starting fuzzer")
-
             while True:
                 tags = [self.get_tag() for _ in range(0, choice(range(1, 3)))]
                 self.populate_ids_names(tags)
@@ -337,12 +325,36 @@ for (var i = 0; i < ids.length; i++) {{
                 if triggered:
                     print(f"XSS Payload: {payload}")
 
+        except Exception as e:
+            log.error(e)
         except KeyboardInterrupt:
             print("Stopping fuzzer")
             self.driver.close()
             return
 
 
-w = WAFBypass(
-    "http://aws-wafbypass-lb-311079289.eu-south-1.elb.amazonaws.com", "param2")
-w.test()
+def main():
+    args = argparse.ArgumentParser()
+    # mutually exclusive group
+    group = args.add_mutually_exclusive_group(required=True)
+    group.add_argument("--url", help="URL to test", type=str)
+    group.add_argument("--update-chromedriver",
+                       help="Update chromedriver to latest version", action="store_true", default=False)
+    args.add_argument("--param", help="Parameter to test",
+                      type=str)
+    args.add_argument("--headless", help="Run in headless mode",
+                      action="store_true", default=False)
+    arguments = args.parse_args()
+
+    if arguments.update_chromedriver:
+        install_chromedriver()
+    else:
+        if arguments.param is None:
+            log.error("Parameter not specified")
+            return
+        w = WAFBypass(arguments)
+        w.test()
+
+
+if __name__ == "__main__":
+    main()
